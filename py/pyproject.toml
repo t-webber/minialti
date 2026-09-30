@@ -14,4 +14,8 @@ requires = ["uv_build>=0.12.20,<0.13.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = ["ruff>=0.16.9", "ty>=0.0.84"]
+dev = [
+    "micropython-rp2-stubs>=1.29.0.post1",
+    "ruff>=0.16.9",
+    "ty>=0.0.84",
+]
