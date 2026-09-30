@@ -1,0 +1,17 @@
+[project]
+name = "py"
+version = "0.1.0"
+description = "Add your description here"
+authors = [{ name = "Tom Webber", email = "t.c.w.webber@gmail.com" }]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+py = "py:main"
+
+[build-system]
+requires = ["uv_build>=0.12.20,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = ["ruff>=0.16.9", "ty>=0.0.84"]
