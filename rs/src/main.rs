@@ -10,7 +10,7 @@ use embassy_rp::peripherals::{I2C0, PIN_0, PIN_1, PIN_25, USB};
 use embassy_rp::{Peri, bind_interrupts, i2c, usb};
 
 use embassy_time::Timer;
-use log::info;
+use log::{error, info};
 use panic_halt as _;
 
 type P<T> = Peri<'static, T>;
@@ -37,31 +37,30 @@ async fn logger_task(pin: P<USB>) -> ! {
     embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
 }
 
-fn log_err<T: fmt::Debug>(res: Result<(), T>) {
-    if let Err(err) = res {
-        info!("error: {err:?}");
-    }
+fn log_err<T: fmt::Debug>(err: &T) {
+    error!("\x1b[31merror: {err:?}\x1b[0m");
 }
 
 async fn get_byte(i2c: &mut I2c<'_, I2C0, i2c::Async>, address: u8) -> u8 {
     let mut byte = [0; 1];
-    log_err(
-        i2c.write_read_async(acc::ACCEL_ADDR, [address], &mut byte)
-            .await,
-    );
+    i2c.write_read_async(acc::ACCEL_ADDR, [address], &mut byte)
+        .await
+        .inspect_err(log_err)
+        .ok();
     byte[0]
 }
 
 async fn get_accel(i2c: &mut I2c<'_, I2C0, i2c::Async>) -> (f32, f32, f32) {
     let mut raw = [0; 6];
-    log_err(
-        i2c.write_read_async(acc::ACCEL_ADDR, [acc::OUT_X_L], &mut raw)
-            .await,
-    );
+    i2c.write_read_async(acc::ACCEL_ADDR, [acc::OUT_X_L], &mut raw)
+        .await
+        .inspect_err(log_err)
+        .ok();
+    let dec = |bytes: [u8; 2]| i16::from_le_bytes(bytes) as f32 / acc::ACCELEROMETER_SCALING_FACTOR;
     (
-        i16::from_le_bytes([raw[0], raw[1]]) as f32 / acc::ACCELEROMETER_SCALING_FACTOR,
-        i16::from_le_bytes([raw[2], raw[3]]) as f32 / acc::ACCELEROMETER_SCALING_FACTOR,
-        i16::from_le_bytes([raw[4], raw[5]]) as f32 / acc::ACCELEROMETER_SCALING_FACTOR,
+        dec([raw[0], raw[1]]),
+        dec([raw[2], raw[3]]),
+        dec([raw[4], raw[5]]),
     )
 }
 
@@ -83,14 +82,14 @@ async fn accelerometer(peri: P<I2C0>, scl: P<PIN_1>, sda: P<PIN_0>) -> ! {
     info!("who: 0x{:02x}", who);
     assert!(who == 0x41);
 
-    log_err(
-        i2c.write_async(acc::ACCEL_ADDR, [acc::CTRL_REG1, acc::CTRL_REG1_VAL])
-            .await,
-    );
-    log_err(
-        i2c.write_async(acc::ACCEL_ADDR, [acc::CTRL_REG4, acc::CTRL_REG4_VAL])
-            .await,
-    );
+    i2c.write_async(acc::ACCEL_ADDR, [acc::CTRL_REG1, acc::CTRL_REG1_VAL])
+        .await
+        .inspect_err(log_err)
+        .ok();
+    i2c.write_async(acc::ACCEL_ADDR, [acc::CTRL_REG4, acc::CTRL_REG4_VAL])
+        .await
+        .inspect_err(log_err)
+        .ok();
 
     let reg1 = get_byte(&mut i2c, acc::CTRL_REG1).await;
     info!("reg1: 0x{:02x}", reg1);
