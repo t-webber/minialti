@@ -4,10 +4,11 @@
 use core::fmt;
 
 use embassy_executor::Spawner;
+use embassy_rp::flash::Flash;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::i2c::I2c;
-use embassy_rp::peripherals::{I2C0, PIN_0, PIN_1, PIN_25, USB};
-use embassy_rp::{Peri, bind_interrupts, i2c, usb};
+use embassy_rp::peripherals::{DMA_CH0, FLASH, I2C0, PIN_0, PIN_1, PIN_25, USB};
+use embassy_rp::{Peri, bind_interrupts, dma, i2c, usb};
 
 use embassy_time::Timer;
 use log::{error, info};
@@ -18,6 +19,7 @@ type P<T> = Peri<'static, T>;
 bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => usb::InterruptHandler<USB>;
     I2C0_IRQ => i2c::InterruptHandler<I2C0>;
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>;
 });
 
 #[embassy_executor::task]
@@ -117,6 +119,44 @@ async fn accelerometer(peri: P<I2C0>, scl: P<PIN_1>, sda: P<PIN_0>) -> ! {
     }
 }
 
+#[embassy_executor::task]
+async fn flash_saver(flash: P<FLASH>, dma: P<DMA_CH0>) {
+    let mut flash = Flash::<_, _, { mem::SIZE }>::new(flash, dma, Irqs);
+
+    let jedec = flash.blocking_jedec_id().unwrap();
+    info!("jedec id: 0x{:x}", jedec);
+
+    let mut uid = [0; 8];
+    flash.blocking_unique_id(&mut uid).unwrap();
+    info!("unique id: {:?}", uid);
+
+    flash
+        .blocking_erase(mem::ADDR, mem::SIZE as u32)
+        .inspect_err(log_err)
+        .ok();
+    info!("erased!");
+
+    const SIZE: usize = 1024;
+    const ONES: [u8; SIZE] = [0xff; SIZE];
+    for offset in 0..10 {
+        info!("writing {offset}");
+        flash
+            .blocking_write(mem::ADDR + (offset * SIZE) as u32, &ONES)
+            .inspect_err(log_err)
+            .ok();
+    }
+
+    let mut buf = [0; SIZE];
+    for offset in 0..10 {
+        info!("reading {offset}");
+        flash
+            .blocking_read(mem::ADDR + offset * SIZE as u32, &mut buf)
+            .unwrap();
+        info!("@{offset}: {:?}..{:?}", &buf[..5], &buf[..5]);
+        Timer::after_secs(1).await;
+    }
+}
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
@@ -124,7 +164,8 @@ async fn main(spawner: Spawner) {
     spawner.spawn(logger_task(p.USB).unwrap());
     Timer::after_secs(1).await; // wait for flash.sh to find device
     info!("setup");
-    spawner.spawn(accelerometer(p.I2C0, p.PIN_1, p.PIN_0).unwrap());
+    //     spawner.spawn(accelerometer(p.I2C0, p.PIN_1, p.PIN_0).unwrap());
+    spawner.spawn(flash_saver(p.FLASH, p.DMA_CH0).unwrap());
 }
 
 mod acc {
@@ -136,4 +177,9 @@ mod acc {
     pub const CTRL_REG4_VAL: u8 = 0b00110100; // 8G, ya pas 16G sur cet accéléromètre
     pub const OUT_X_L: u8 = 0x28;
     pub const ACCELEROMETER_SCALING_FACTOR: f32 = 4096.; // Valeur pour 8G
+}
+
+mod mem {
+    pub const ADDR: u32 = 256 * 1024; // 256KB for firmware
+    pub const SIZE: usize = 2 * 1024 * 1024; // 16 MB = 2 Mb
 }

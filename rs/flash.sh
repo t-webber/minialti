@@ -17,10 +17,9 @@ sudo mount -o uid=$(id -u),sync $disk .rpi
 
 elf2uf2-rs -d "$1" || exit 1
 
-echo "Waiting for $dev"
-while [ ! -e $dev ]; do sleep 0.2; done
-
 while :; do
+        echo "Waiting for $dev"
+        while [ ! -e $dev ]; do sleep 0.2; done
         stty -F /dev/ttyACM0 raw -echo
         cat $dev
         sleep 0.2
