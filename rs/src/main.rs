@@ -4,7 +4,7 @@
 use core::fmt;
 
 use embassy_executor::Spawner;
-use embassy_rp::flash::Flash;
+use embassy_rp::flash::{self, Flash};
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::i2c::I2c;
 use embassy_rp::peripherals::{DMA_CH0, FLASH, I2C0, PIN_0, PIN_1, PIN_25, USB};
@@ -29,7 +29,7 @@ pub async fn blink(pin: P<PIN_25>) -> ! {
         led.toggle();
         Timer::after_millis(100).await;
         led.toggle();
-        Timer::after_millis(900).await;
+        Timer::after_millis(1900).await;
     }
 }
 
@@ -123,37 +123,29 @@ async fn accelerometer(peri: P<I2C0>, scl: P<PIN_1>, sda: P<PIN_0>) -> ! {
 async fn flash_saver(flash: P<FLASH>, dma: P<DMA_CH0>) {
     let mut flash = Flash::<_, _, { mem::SIZE }>::new(flash, dma, Irqs);
 
-    let jedec = flash.blocking_jedec_id().unwrap();
-    info!("jedec id: 0x{:x}", jedec);
+    info!("jedec id: 0x{:x}", flash.blocking_jedec_id().unwrap());
+    info!("capacity: 0x{:x}", flash.capacity());
 
-    let mut uid = [0; 8];
-    flash.blocking_unique_id(&mut uid).unwrap();
-    info!("unique id: {:?}", uid);
-
-    flash
-        .blocking_erase(mem::ADDR, mem::SIZE as u32)
-        .inspect_err(log_err)
-        .ok();
-    info!("erased!");
+    for (from, to) in [
+        (mem::ADDR, mem::ADDR + flash::ERASE_SIZE as u32),
+        ((mem::SIZE - flash::ERASE_SIZE) as u32, mem::SIZE as u32),
+    ] {
+        flash.blocking_erase(from, to).inspect_err(log_err).ok();
+    }
+    info!("blocks erased!");
 
     const SIZE: usize = 1024;
-    const ONES: [u8; SIZE] = [0xff; SIZE];
-    for offset in 0..10 {
-        info!("writing {offset}");
-        flash
-            .blocking_write(mem::ADDR + (offset * SIZE) as u32, &ONES)
-            .inspect_err(log_err)
-            .ok();
+    const DATA: [u8; SIZE] = [51; SIZE];
+    for from in [mem::ADDR, mem::SIZE as u32 - SIZE as u32] {
+        flash.blocking_write(from, &DATA).inspect_err(log_err).ok();
     }
+    info!("blocks written!");
 
-    let mut buf = [0; SIZE];
-    for offset in 0..10 {
-        info!("reading {offset}");
-        flash
-            .blocking_read(mem::ADDR + offset * SIZE as u32, &mut buf)
-            .unwrap();
-        info!("@{offset}: {:?}..{:?}", &buf[..5], &buf[..5]);
-        Timer::after_secs(1).await;
+    for from in [mem::ADDR, mem::SIZE as u32 - SIZE as u32] {
+        let mut buf = [0; SIZE];
+        flash.blocking_read(from, &mut buf).unwrap();
+        info!("@read: {:?}..{:?}", &buf[..5], &buf[SIZE - 5..]);
+        info!("@read valid: {}", buf == DATA);
     }
 }
 
