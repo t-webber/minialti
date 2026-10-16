@@ -8,7 +8,10 @@ use embassy_rp::i2c::I2c;
 use embassy_rp::peripherals::{DMA_CH0, FLASH, I2C0, PIN_0, PIN_1};
 use embassy_time::Timer;
 use log::info;
-use rpi::{Irqs, P, acc, blink_task, get_accel_raw, log_err, logger_task, mem, setup_accel};
+use rpi::{
+    Irqs, P, acc, blink_task, get_accel_raw, log_err, logger_task, mem, parse_accel_values,
+    setup_accel,
+};
 
 async fn get_byte(i2c: &mut I2c<'_, I2C0, i2c::Async>, address: u8) -> u8 {
     let mut byte = [0; 1];
@@ -21,12 +24,7 @@ async fn get_byte(i2c: &mut I2c<'_, I2C0, i2c::Async>, address: u8) -> u8 {
 
 async fn get_accel(i2c: &mut I2c<'_, I2C0, i2c::Async>) -> (f32, f32, f32) {
     let raw = get_accel_raw(i2c).await;
-    let dec = |bytes: [u8; 2]| i16::from_le_bytes(bytes) as f32 / acc::SCALING_FACTOR;
-    (
-        dec([raw[0], raw[1]]),
-        dec([raw[2], raw[3]]),
-        dec([raw[4], raw[5]]),
-    )
+    parse_accel_values(raw)
 }
 
 fn col(x: f32) -> &'static str {
