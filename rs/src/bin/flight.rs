@@ -17,10 +17,18 @@ static CHANNEL: Channel<CriticalSectionRawMutex, [u8; 6], 1024> = Channel::new()
 #[embassy_executor::task]
 async fn measure_accel_task(peri: P<I2C0>, scl: P<PIN_1>, sda: P<PIN_0>) -> ! {
     let mut i2c = setup_accel(peri, scl, sda).await;
-    let mut ticker = Ticker::every(Duration::from_millis(2));
+    let mut ticker = Ticker::every(Duration::from_millis(5));
+    let mut launched = false;
     loop {
         ticker.next().await;
         let bytes = get_accel_raw(&mut i2c).await;
+        if !launched {
+            let (x, y, z) = parse_accel_values(&bytes);
+            if (x * x + y * y + z * z) < 9. {
+                continue;
+            }
+            launched = true;
+        }
         CHANNEL.send(bytes).await;
     }
 }
