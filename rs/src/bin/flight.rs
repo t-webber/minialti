@@ -28,9 +28,7 @@ async fn measure_accel_task(peri: P<I2C0>, scl: P<PIN_1>, sda: P<PIN_0>) -> ! {
 #[embassy_executor::task]
 async fn save_data_task(flash: P<FLASH>, dma: P<DMA_CH0>) {
     let mut flash = Flash::<_, _, { mem::SIZE }>::new(flash, dma, Irqs);
-    const CAP: usize = 6 * 512; // 3072
-    let mut data = [0_u8; CAP];
-    let mut data_cursor = 0;
+
     let mut from = mem::ADDR;
     info!("erasing flash");
     flash
@@ -38,17 +36,25 @@ async fn save_data_task(flash: P<FLASH>, dma: P<DMA_CH0>) {
         .inspect_err(log_err)
         .ok();
     info!("done erasing flash");
+
+    const VALUES: usize = 42;
+    const BUF: usize = VALUES * 6; // 252
+    let mut data = [0_u8; BUF];
+    let mut data_cursor = 0;
+
     loop {
         let raw = &CHANNEL.receive().await;
-        data[data_cursor..data_cursor + 6].copy_from_slice(raw);
-        let (x, y, z) = parse_accel_values(*raw);
-        info!("{x:+.2} {y:+.2} {z:+.2}");
-        data_cursor += 6;
-        if data_cursor == CAP {
+        data[6 * data_cursor..6 * data_cursor + 6].copy_from_slice(raw);
+        data_cursor += 1;
+        if data_cursor == VALUES {
             info!("storing data");
             flash.blocking_write(from, &data).inspect_err(log_err).ok();
-            from += CAP as u32;
+            from += BUF as u32;
             data_cursor = 0;
+        }
+        if data_cursor % 10 == 0 {
+            let (x, y, z) = parse_accel_values(raw);
+            info!("{x:+.2} {y:+.2} {z:+.2}");
         }
     }
 }
@@ -56,7 +62,7 @@ async fn save_data_task(flash: P<FLASH>, dma: P<DMA_CH0>) {
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-    spawner.spawn(blink_task(p.PIN_25).unwrap());
+    spawner.spawn(blink_task(p.PIN_25, 3).unwrap());
     spawner.spawn(logger_task(p.USB).unwrap());
     Timer::after_secs(1).await; // wait for flash.sh to find device
     spawner.spawn(save_data_task(p.FLASH, p.DMA_CH0).unwrap());

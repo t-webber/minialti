@@ -24,7 +24,7 @@ async fn get_byte(i2c: &mut I2c<'_, I2C0, i2c::Async>, address: u8) -> u8 {
 
 async fn get_accel(i2c: &mut I2c<'_, I2C0, i2c::Async>) -> (f32, f32, f32) {
     let raw = get_accel_raw(i2c).await;
-    parse_accel_values(raw)
+    parse_accel_values(&raw)
 }
 
 fn col(x: f32) -> &'static str {

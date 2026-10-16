@@ -21,7 +21,7 @@ while :; do
         echo "Waiting for $dev"
         while [ ! -e $dev ]; do sleep 0.2; done
         stty -F /dev/ttyACM0 raw -echo
-        cat $dev
+        cat $dev | tee out
         sleep 0.2
         echo "Program exited"
 done

@@ -22,15 +22,13 @@ pub fn log_err<T: fmt::Debug>(err: &T) {
 }
 
 #[embassy_executor::task]
-pub async fn blink_task(pin: P<PIN_25>) -> ! {
+pub async fn blink_task(pin: P<PIN_25>, slp: u64) -> ! {
     let mut led = Output::new(pin, Level::Low);
     loop {
-        // 0.1s ON, 1.9s OFF pour préserver la diode
-        // utilisée comme témoin de fonctionnement
         led.toggle();
         Timer::after_millis(100).await;
         led.toggle();
-        Timer::after_millis(1900).await;
+        Timer::after_millis(400 + slp * 500).await;
     }
 }
 
@@ -66,7 +64,7 @@ pub async fn setup_accel(
     i2c
 }
 
-pub fn parse_accel_values(raw: [u8; 6]) -> (f32, f32, f32) {
+pub fn parse_accel_values(raw: &[u8]) -> (f32, f32, f32) {
     let dec = |bytes: [u8; 2]| i16::from_le_bytes(bytes) as f32 / acc::SCALING_FACTOR;
     (
         dec([raw[0], raw[1]]),
